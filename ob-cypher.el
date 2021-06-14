@@ -137,19 +137,111 @@
     (message cmd)
     (if (string= "output" result-type) result (ob-cypher/table result))))
 
+;;; support for issuing cypher queries to SciGraph
+
+(defun ob-cypher/scigraph/dot (statement scigraph limit output)
+  (let* ((tmp (org-babel-temp-file "cypher-dot-"))
+         (result (ob-cypher/scigraph/query statement scigraph limit))
+         (dot (ob-cypher/scigraph/json-to-dot result))
+         (cmd (format "dot -Grankdir=RL -T%s -o %s %s" (file-name-extension output) output tmp)))
+    (with-temp-file tmp
+      (insert dot))
+    (org-babel-eval cmd "")
+    nil))
+
+(defun ob-cypher/scigraph/json-to-dot (output)
+  (let* ((json-array-type 'list)
+         (json-object-type 'hash-table)
+         (parsed (json-read-from-string output))
+         (edges (gethash "edges" parsed))
+         (nodes (gethash "nodes" parsed))
+         (template `(("nodes" . ,(s-join "\n" (-map 'ob-cypher/scigraph/node-to-dot nodes)))
+                     ("edges" . ,(s-join "\n" (-map 'ob-cypher/scigraph/edge-to-dot edges))))))
+    (s-format "digraph {\nnode[shape=Mrecord]\n${nodes}\n${edges}\n} " 'aget template)))
+
+(defun ob-cypher/scigraph/safe-id (id)
+  (string-replace "-" "_" ; FIXME dry
+  (string-replace "." "_"
+  (string-replace "/" "_"
+  (string-replace ":" "_" id)))))
+
+(defun ob-cypher/scigraph/node-to-dot (node)
+  (let ((sid (ob-cypher/scigraph/safe-id (gethash "id" node)))
+        (label (or (gethash "lbl" node) ; can't have nil here or `s-format' fails
+                   (concat "MISSING-LABEL " (gethash "id" node)))))
+    (s-format "n${id} [label=\"${label}\"]" 'aget
+     `(("id" . ,sid)
+       ("label" . ,label)))))
+
+(defun ob-cypher/scigraph/edge-to-dot (edge)
+  (s-format "n${start} -> n${end} [label = \"${label}\"]" 'aget
+            `(("start" . ,(ob-cypher/scigraph/safe-id (gethash "sub" edge)))
+              ("end" . ,(ob-cypher/scigraph/safe-id (gethash "obj" edge)))
+              ("label" . ,(gethash "pred" edge)))))
+
+(defun ob-cypher/scigraph/rest (statement scigraph limit scigraph-var result-params)
+  (let* ((tmp (org-babel-temp-file "cypher-rest-"))
+         (result (ob-cypher/scigraph/query statement scigraph limit)))
+    (if (member "drawer" result-params)
+        (let ((jpp (with-temp-buffer
+                     (insert result)
+                     (json-pretty-print-buffer)
+                     (buffer-string))))
+          jpp)
+      (ob-cypher/scigraph/json-to-table result scigraph-var))))
+
+(defun ob-cypher/scigraph/query (statement scigraph limit)
+  (let* ((qs (format "?limit=%s&cypherQuery=%s" (or limit 10) (url-hexify-string statement)))
+         (url (concat scigraph "/cypher/execute" qs))
+         (cmd (format "curl -sH 'Accept: application/json; charset=UTF-8' '%s'" url)))
+    (message "query wat: %s..." (substring cmd 0 (min 200 (length cmd))))
+    (shell-command-to-string cmd)))
+
+(defun ob-cypher/scigraph/curies (scigraph) ; XXX unused
+  ;; example: (ob-cypher/scigraph/curies "http://selene:9000/scigraph")
+  (let* ((json-array-type 'list)
+         (json-object-type 'hash-table)
+         (url (concat scigraph "/cypher/curies"))
+         (result (shell-command-to-string
+                  (format "curl -sH 'Accept: application/json; charset=UTF-8' '%s'" url)))
+         (parsed (json-read-from-string result)))
+    parsed))
+
+(defun ob-cypher/scigraph/json-to-table (output scigraph-var)
+  ;; {"nodes": [{} ...], "edges": [{} ...]}
+  (let* ((json-array-type 'list)
+         (json-object-type 'hash-table)
+         (parsed (json-read-from-string output))
+         (nodes (gethash "nodes" parsed))
+         (rows (cl-loop for node in nodes
+                        collect (list (gethash "id" node)
+                                      (gethash "lbl" node))))
+         (header (list "id" "label")))
+    (cons header rows)))
+
+;;; execute
+
 (defun org-babel-execute:cypher (body params)
   (let* ((host (or (cdr (assoc :host params)) "127.0.0.1"))
          (port (or (cdr (assoc :port params)) 1337))
          (username (or (cdr (assoc :username params)) "neo4j"))
          (password (or (cdr (assoc :password params)) "neo4j"))
-	       (authstring (base64-encode-string (concat username ":" password)))
+           (authstring (base64-encode-string (concat username ":" password)))
          (http-port (or (cdr (assoc :http-port params)) 7474))
+         (scigraph (cdr (assoc :scigraph params)))
+         (limit (cdr (assoc :limit params)))
+         (scigraph-var (cdr (assoc :scigraph-var params)))
+         (result-params (cdr (assoc :result-params params)))
          (result-type (cdr (assoc :result-type params)))
          (output (cdr (assoc :file params)))
          (body (if (s-ends-with? ";" body) body (s-append ";" body))))
-    (if output
-        (ob-cypher/dot body host http-port output authstring)
-      (ob-cypher/rest body host http-port authstring))))
+    (if scigraph
+        (if output
+            (ob-cypher/scigraph/dot body scigraph limit output)
+          (ob-cypher/scigraph/rest body scigraph limit scigraph-var result-params))
+      (if output
+          (ob-cypher/dot body host http-port output authstring)
+        (ob-cypher/rest body host http-port authstring)))))
 
 (provide 'ob-cypher)
 ;;; ob-cypher.el ends here
