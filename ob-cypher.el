@@ -143,7 +143,14 @@
   (let* ((tmp (org-babel-temp-file "cypher-dot-"))
          (result (ob-cypher/scigraph/query statement scigraph limit))
          (dot (ob-cypher/scigraph/json-to-dot result))
-         (cmd (format "dot -Grankdir=RL -T%s -o %s %s" (file-name-extension output) output tmp)))
+         (cmd (format
+               (concat
+                "dot "
+                "-Efontname='Dejavu Sans Mono' "
+                "-Nfontname='Dejavu Sans Mono' "
+                "-Grankdir=LR "
+                "-T%s -o %s %s")
+               (file-name-extension output) output tmp)))
     (with-temp-file tmp
       (insert dot))
     (org-babel-eval cmd "")
@@ -168,9 +175,11 @@
 (defun ob-cypher/scigraph/node-to-dot (node)
   (let ((sid (ob-cypher/scigraph/safe-id (gethash "id" node)))
         (label (or (gethash "lbl" node) ; can't have nil here or `s-format' fails
-                   (concat "MISSING-LABEL " (gethash "id" node)))))
-    (s-format "n${id} [label=\"${label}\"]" 'aget
+                   "MISSING LABEL")))
+    (s-format
+     "n${id} [label=\"${label}\\n${id-real}\"]" 'aget
      `(("id" . ,sid)
+       ("id-real" ,(gethash "id" node))
        ("label" . ,label)))))
 
 (defun ob-cypher/scigraph/edge-to-dot (edge)
@@ -179,7 +188,7 @@
               ("end" . ,(ob-cypher/scigraph/safe-id (gethash "obj" edge)))
               ("label" . ,(gethash "pred" edge)))))
 
-(defun ob-cypher/scigraph/rest (statement scigraph limit scigraph-var result-params)
+(defun ob-cypher/scigraph/rest (statement scigraph limit result-params)
   (let* ((tmp (org-babel-temp-file "cypher-rest-"))
          (result (ob-cypher/scigraph/query statement scigraph limit)))
     (if (member "drawer" result-params)
@@ -188,13 +197,13 @@
                      (json-pretty-print-buffer)
                      (buffer-string))))
           jpp)
-      (ob-cypher/scigraph/json-to-table result scigraph-var))))
+      (ob-cypher/scigraph/json-to-table result))))
 
 (defun ob-cypher/scigraph/query (statement scigraph limit)
   (let* ((qs (format "?limit=%s&cypherQuery=%s" (or limit 10) (url-hexify-string statement)))
          (url (concat scigraph "/cypher/execute" qs))
          (cmd (format "curl -sH 'Accept: application/json; charset=UTF-8' '%s'" url)))
-    (message "query wat: %s..." (substring cmd 0 (min 200 (length cmd))))
+    ;; (message "query wat: %s..." (substring cmd 0 (min 200 (length cmd))))
     (shell-command-to-string cmd)))
 
 (defun ob-cypher/scigraph/curies (scigraph) ; XXX unused
@@ -207,7 +216,7 @@
          (parsed (json-read-from-string result)))
     parsed))
 
-(defun ob-cypher/scigraph/json-to-table (output scigraph-var)
+(defun ob-cypher/scigraph/json-to-table (output)
   ;; {"nodes": [{} ...], "edges": [{} ...]}
   (let* ((json-array-type 'list)
          (json-object-type 'hash-table)
@@ -230,7 +239,6 @@
          (http-port (or (cdr (assoc :http-port params)) 7474))
          (scigraph (cdr (assoc :scigraph params)))
          (limit (cdr (assoc :limit params)))
-         (scigraph-var (cdr (assoc :scigraph-var params)))
          (result-params (cdr (assoc :result-params params)))
          (result-type (cdr (assoc :result-type params)))
          (output (cdr (assoc :file params)))
@@ -238,7 +246,7 @@
     (if scigraph
         (if output
             (ob-cypher/scigraph/dot body scigraph limit output)
-          (ob-cypher/scigraph/rest body scigraph limit scigraph-var result-params))
+          (ob-cypher/scigraph/rest body scigraph limit result-params))
       (if output
           (ob-cypher/dot body host http-port output authstring)
         (ob-cypher/rest body host http-port authstring)))))
