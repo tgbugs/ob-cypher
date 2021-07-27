@@ -139,9 +139,9 @@
 
 ;;; support for issuing cypher queries to SciGraph
 
-(defun ob-cypher/scigraph/dot (statement scigraph limit output)
+(defun ob-cypher/scigraph/dot (statement vars scigraph limit output)
   (let* ((tmp (org-babel-temp-file "cypher-dot-"))
-         (result (ob-cypher/scigraph/query statement scigraph limit))
+         (result (ob-cypher/scigraph/query statement vars scigraph limit))
          (dot (ob-cypher/scigraph/json-to-dot result))
          (cmd (format
                (concat
@@ -188,9 +188,9 @@
               ("end" . ,(ob-cypher/scigraph/safe-id (gethash "obj" edge)))
               ("label" . ,(gethash "pred" edge)))))
 
-(defun ob-cypher/scigraph/rest (statement scigraph limit result-params)
+(defun ob-cypher/scigraph/rest (statement vars scigraph limit result-params)
   (let* ((tmp (org-babel-temp-file "cypher-rest-"))
-         (result (ob-cypher/scigraph/query statement scigraph limit)))
+         (result (ob-cypher/scigraph/query statement vars scigraph limit)))
     (if (member "drawer" result-params)
         (let ((jpp (with-temp-buffer
                      (insert result)
@@ -199,8 +199,13 @@
           jpp)
       (ob-cypher/scigraph/json-to-table result))))
 
-(defun ob-cypher/scigraph/query (statement scigraph limit)
-  (let* ((qs (format "?limit=%s&cypherQuery=%s" (or limit 10) (url-hexify-string statement)))
+(defun ob-cypher/scigraph/query (statement vars scigraph limit)
+  (let* ((qs (format "?limit=%s&cypherQuery=%s%s"
+                     (or limit 10)
+                     (url-hexify-string statement)
+                     (let ((qp (string-join
+                                (mapcar (lambda (pair) (format "%s=%s" (car pair) (cdr pair))) vars) "&")))
+                       (if (string= qp "" ) qp (concat "&" qp)))))
          (url (concat scigraph "/cypher/execute" qs))
          (cmd (format "curl -sH 'Accept: application/json; charset=UTF-8' '%s'" url)))
     ;; (message "query wat: %s..." (substring cmd 0 (min 200 (length cmd))))
@@ -239,14 +244,15 @@
          (http-port (or (cdr (assoc :http-port params)) 7474))
          (scigraph (cdr (assoc :scigraph params)))
          (limit (cdr (assoc :limit params)))
+         (vars (org-babel--get-vars params))
          (result-params (cdr (assoc :result-params params)))
          (result-type (cdr (assoc :result-type params)))
          (output (cdr (assoc :file params)))
          (body (if (s-ends-with? ";" body) body (s-append ";" body))))
     (if scigraph
         (if output
-            (ob-cypher/scigraph/dot body scigraph limit output)
-          (ob-cypher/scigraph/rest body scigraph limit result-params))
+            (ob-cypher/scigraph/dot body vars scigraph limit output)
+          (ob-cypher/scigraph/rest body vars scigraph limit result-params))
       (if output
           (ob-cypher/dot body host http-port output authstring)
         (ob-cypher/rest body host http-port authstring)))))
