@@ -1,4 +1,4 @@
-;;; ob-cypher.el --- query neo4j using cypher in org-mode blocks
+;;; ob-cypher.el --- query neo4j using cypher in org-mode blocks -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2015 ZHOU Feng
 
@@ -156,10 +156,10 @@
     (org-babel-eval cmd "")
     nil))
 
-(defun ob-cypher/scigraph/json-to-dot (output)
+(defun ob-cypher/scigraph/json-to-dot (result)
   (let* ((json-array-type 'list)
          (json-object-type 'hash-table)
-         (parsed (json-read-from-string output))
+         (parsed (json-read-from-string result))
          (edges (gethash "edges" parsed))
          (nodes (gethash "nodes" parsed))
          (template `(("nodes" . ,(s-join "\n" (-map 'ob-cypher/scigraph/node-to-dot nodes)))
@@ -167,10 +167,10 @@
     (s-format "digraph {\nnode[shape=Mrecord]\n${nodes}\n${edges}\n} " 'aget template)))
 
 (defun ob-cypher/scigraph/safe-id (id)
-  (string-replace "-" "_" ; FIXME dry
-  (string-replace "." "_"
-  (string-replace "/" "_"
-  (string-replace ":" "_" id)))))
+  (replace-regexp-in-string "-" "_" ; FIXME dry
+  (replace-regexp-in-string "." "_"
+  (replace-regexp-in-string "/" "_"
+  (replace-regexp-in-string ":" "_" id)))))
 
 (defun ob-cypher/scigraph/node-to-dot (node)
   (let ((sid (ob-cypher/scigraph/safe-id (gethash "id" node)))
@@ -221,17 +221,17 @@
          (parsed (json-read-from-string result)))
     parsed))
 
-(defun ob-cypher/scigraph/json-to-table (output)
+(defun ob-cypher/scigraph/json-to-table (result)
   ;; {"nodes": [{} ...], "edges": [{} ...]}
   (let* ((json-array-type 'list)
          (json-object-type 'hash-table)
-         (parsed (json-read-from-string output))
+         (parsed (json-read-from-string result))
          (nodes (gethash "nodes" parsed))
          (rows (cl-loop for node in nodes
                         collect (list (gethash "id" node)
-                                      (gethash "lbl" node))))
+                                      (or (gethash "lbl" node) ""))))
          (header (list "id" "label")))
-    (cons header rows)))
+    (cons header (cons 'hline rows))))
 
 ;;; execute
 
