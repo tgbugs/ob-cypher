@@ -168,7 +168,7 @@
 
 (defun ob-cypher/scigraph/safe-id (id)
   (replace-regexp-in-string "-" "_" ; FIXME dry
-  (replace-regexp-in-string "." "_"
+  (replace-regexp-in-string "\\." "_"
   (replace-regexp-in-string "/" "_"
   (replace-regexp-in-string ":" "_" id)))))
 
