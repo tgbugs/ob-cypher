@@ -250,10 +250,10 @@
          (output (cdr (assoc :file params)))
          (body (if (s-ends-with? ";" body) body (s-append ";" body))))
     (if scigraph
-        (if output
+        (if (and output (member "file" result-params))
             (ob-cypher/scigraph/dot body vars scigraph limit output)
           (ob-cypher/scigraph/rest body vars scigraph limit result-params))
-      (if output
+      (if (and output (member "file" result-params))
           (ob-cypher/dot body host http-port output authstring)
         (ob-cypher/rest body host http-port authstring)))))
 
