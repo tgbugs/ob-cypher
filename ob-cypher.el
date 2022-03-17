@@ -188,7 +188,7 @@
               ("end" . ,(ob-cypher/scigraph/safe-id (gethash "obj" edge)))
               ("label" . ,(gethash "pred" edge)))))
 
-(defun ob-cypher/scigraph/rest (statement vars scigraph limit result-params)
+(defun ob-cypher/scigraph/rest (statement vars scigraph limit result-params label-predicate)
   (let* ((tmp (org-babel-temp-file "cypher-rest-"))
          (result (ob-cypher/scigraph/query statement vars scigraph limit)))
     (if (member "drawer" result-params)
@@ -197,7 +197,7 @@
                      (json-pretty-print-buffer)
                      (buffer-string))))
           jpp)
-      (ob-cypher/scigraph/json-to-table result))))
+      (ob-cypher/scigraph/json-to-table result label-predicate))))
 
 (defun ob-cypher/scigraph/query (statement vars scigraph limit)
   (let* ((qs (format "?limit=%s&cypherQuery=%s%s"
@@ -206,7 +206,7 @@
                      (let ((qp (string-join
                                 (mapcar (lambda (pair) (format "%s=%s" (car pair) (cdr pair))) vars) "&")))
                        (if (string= qp "" ) qp (concat "&" qp)))))
-         (url (concat scigraph "/cypher/execute" qs))
+         (url (concat scigraph "/cypher/execute.json" qs))
          (cmd (format "curl -sH 'Accept: application/json; charset=UTF-8' '%s'" url)))
     ;; (message "query wat: %s..." (substring cmd 0 (min 200 (length cmd))))
     (shell-command-to-string cmd)))
@@ -221,7 +221,7 @@
          (parsed (json-read-from-string result)))
     parsed))
 
-(defun ob-cypher/scigraph/json-to-table (result)
+(defun ob-cypher/scigraph/json-to-table (result &optional label-predicate)
   ;; {"nodes": [{} ...], "edges": [{} ...]}
   (let* ((json-array-type 'list)
          (json-object-type 'hash-table)
@@ -229,7 +229,9 @@
          (nodes (gethash "nodes" parsed))
          (rows (cl-loop for node in nodes
                         collect (list (gethash "id" node)
-                                      (or (gethash "lbl" node) ""))))
+                                      (or (and label-predicate
+                                               (car (gethash label-predicate (gethash "meta" node))))
+                                          (gethash "lbl" node) ""))))
          (header (list "id" "label")))
     (cons header (cons 'hline rows))))
 
@@ -244,6 +246,7 @@
          (http-port (or (cdr (assoc :http-port params)) 7474))
          (scigraph (cdr (assoc :scigraph params)))
          (limit (cdr (assoc :limit params)))
+         (label-predicate (cdr (assoc :label params)))
          (vars (org-babel--get-vars params))
          (result-params (cdr (assoc :result-params params)))
          (result-type (cdr (assoc :result-type params)))
@@ -252,7 +255,7 @@
     (if scigraph
         (if (and output (member "file" result-params))
             (ob-cypher/scigraph/dot body vars scigraph limit output)
-          (ob-cypher/scigraph/rest body vars scigraph limit result-params))
+          (ob-cypher/scigraph/rest body vars scigraph limit result-params label-predicate))
       (if (and output (member "file" result-params))
           (ob-cypher/dot body host http-port output authstring)
         (ob-cypher/rest body host http-port authstring)))))
