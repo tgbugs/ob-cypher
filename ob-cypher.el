@@ -28,7 +28,6 @@
 ;;
 
 ;;; Code:
-(require 'org)
 (require 'ob)
 (require 's)
 (require 'dash)
