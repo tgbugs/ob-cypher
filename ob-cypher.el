@@ -36,6 +36,12 @@
 (defvar org-babel-default-header-args:cypher
   '((:results . "output")))
 
+(defvar ob-cypher/scigraph-api-key nil
+  "API key for scigraph endpoint so that it can be set in a config if needed.
+It is probably better to use a closure on the parameter in the org file such as
+#+begin_src cypher :scigraph https://protect.server/scigraph :api-key (get-scigraph-api-key)
+or similar. PLEASE DO NOT PUT YOUR API KEYS IN AN ORG FILE DIRECTLY.")
+
 (defun ob-cypher/parse-result (output)
   (->> (s-lines output)
     (-filter (-partial 's-starts-with? "|"))
@@ -138,9 +144,9 @@
 
 ;;; support for issuing cypher queries to SciGraph
 
-(defun ob-cypher/scigraph/dot (statement vars scigraph limit output)
+(defun ob-cypher/scigraph/dot (statement vars scigraph limit output api-key)
   (let* ((tmp (org-babel-temp-file "cypher-dot-"))
-         (result (ob-cypher/scigraph/query statement vars scigraph limit))
+         (result (ob-cypher/scigraph/query statement vars scigraph limit api-key))
          (dot (ob-cypher/scigraph/json-to-dot result))
          (cmd (format
                (concat
@@ -187,9 +193,9 @@
               ("end" . ,(ob-cypher/scigraph/safe-id (gethash "obj" edge)))
               ("label" . ,(gethash "pred" edge)))))
 
-(defun ob-cypher/scigraph/rest (statement vars scigraph limit result-params label-predicate)
+(defun ob-cypher/scigraph/rest (statement vars scigraph limit result-params label-predicate api-key)
   (let* ((tmp (org-babel-temp-file "cypher-rest-"))
-         (result (ob-cypher/scigraph/query statement vars scigraph limit)))
+         (result (ob-cypher/scigraph/query statement vars scigraph limit api-key)))
     (if (member "drawer" result-params)
         (let ((jpp (with-temp-buffer
                      (insert result)
@@ -198,23 +204,36 @@
           jpp)
       (ob-cypher/scigraph/json-to-table result label-predicate))))
 
-(defun ob-cypher/scigraph/query (statement vars scigraph limit)
+(defun ob-cypher/scigraph--get-api-key (api-key sep)
+  "Return url parameter embedding API-KEY if API-KEY is non-nil.
+If API-KEY is t use the value of `ob-cypher/scigraph-api-key'.
+If API-KEY is a symbol or a string the value will be used as the key."
+  (message "tok: %S %S" (type-of api-key) api-key)
+  (let ((key (and api-key
+                  (or (and (stringp api-key) api-key)
+                      (and (booleanp api-key) ob-cypher/scigraph-api-key)
+                      (and (symbolp api-key) (symbol-name api-key))))))
+    (when key
+      (concat sep "key=" key))))
+
+(defun ob-cypher/scigraph/query (statement vars scigraph limit api-key)
   (let* ((qs (format "?limit=%s&cypherQuery=%s%s"
                      (or limit 10)
                      (url-hexify-string statement)
                      (let ((qp (string-join
                                 (mapcar (lambda (pair) (format "%s=%s" (car pair) (cdr pair))) vars) "&")))
                        (if (string= qp "" ) qp (concat "&" qp)))))
-         (url (concat scigraph "/cypher/execute.json" qs))
+         (url (concat scigraph "/cypher/execute.json" qs (ob-cypher/scigraph--get-api-key api-key "&")))
          (cmd (format "curl -sH 'Accept: application/json; charset=UTF-8' '%s'" url)))
-    ;; (message "query wat: %s..." (substring cmd 0 (min 200 (length cmd))))
+    ;;(message "%s" cmd) ; XXX
+    (message "query wat: %s..." (substring cmd 0 (min 200 (length cmd))))
     (shell-command-to-string cmd)))
 
-(defun ob-cypher/scigraph/curies (scigraph) ; XXX unused
+(defun ob-cypher/scigraph/curies (scigraph api-key) ; XXX unused
   ;; example: (ob-cypher/scigraph/curies "http://selene:9000/scigraph")
   (let* ((json-array-type 'list)
          (json-object-type 'hash-table)
-         (url (concat scigraph "/cypher/curies"))
+         (url (concat scigraph "/cypher/curies" (ob-cypher/scigraph--get-api-key api-key "?")))
          (result (shell-command-to-string
                   (format "curl -sH 'Accept: application/json; charset=UTF-8' '%s'" url)))
          (parsed (json-read-from-string result)))
@@ -241,9 +260,13 @@
          (port (or (cdr (assoc :port params)) 1337))
          (username (or (cdr (assoc :username params)) "neo4j"))
          (password (or (cdr (assoc :password params)) "neo4j"))
-           (authstring (base64-encode-string (concat username ":" password)))
+         (authstring (base64-encode-string (concat username ":" password)))
          (http-port (or (cdr (assoc :http-port params)) 7474))
          (scigraph (cdr (assoc :scigraph params)))
+         ;; XXX can't distinguish :api-key :var from :api-key (or)
+         ;; :var so we are stuck requiring an explicit value, not just
+         ;; the presence of the key
+         (api-key (cdr (assoc :api-key params)))
          (limit (cdr (assoc :limit params)))
          (label-predicate (cdr (assoc :label params)))
          (vars (org-babel--get-vars params))
@@ -253,8 +276,8 @@
          (body (if (s-ends-with? ";" body) body (s-append ";" body))))
     (if scigraph
         (if (and output (member "file" result-params))
-            (ob-cypher/scigraph/dot body vars scigraph limit output)
-          (ob-cypher/scigraph/rest body vars scigraph limit result-params label-predicate))
+            (ob-cypher/scigraph/dot body vars scigraph limit output api-key)
+          (ob-cypher/scigraph/rest body vars scigraph limit result-params label-predicate api-key))
       (if (and output (member "file" result-params))
           (ob-cypher/dot body host http-port output authstring)
         (ob-cypher/rest body host http-port authstring)))))
