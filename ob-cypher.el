@@ -208,7 +208,6 @@ or similar. PLEASE DO NOT PUT YOUR API KEYS IN AN ORG FILE DIRECTLY.")
   "Return url parameter embedding API-KEY if API-KEY is non-nil.
 If API-KEY is t use the value of `ob-cypher/scigraph-api-key'.
 If API-KEY is a symbol or a string the value will be used as the key."
-  (message "tok: %S %S" (type-of api-key) api-key)
   (let ((key (and api-key
                   (or (and (stringp api-key) api-key)
                       (and (booleanp api-key) ob-cypher/scigraph-api-key)
@@ -226,7 +225,7 @@ If API-KEY is a symbol or a string the value will be used as the key."
          (url (concat scigraph "/cypher/execute.json" qs (ob-cypher/scigraph--get-api-key api-key "&")))
          (cmd (format "curl -sH 'Accept: application/json; charset=UTF-8' '%s'" url)))
     ;;(message "%s" cmd) ; XXX
-    (message "query wat: %s..." (substring cmd 0 (min 200 (length cmd))))
+    ;;(message "query wat: %s..." (substring cmd 0 (min 200 (length cmd))))
     (shell-command-to-string cmd)))
 
 (defun ob-cypher/scigraph/curies (scigraph api-key) ; XXX unused
