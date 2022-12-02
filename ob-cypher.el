@@ -58,14 +58,14 @@ or similar. PLEASE DO NOT PUT YOUR API KEYS IN AN ORG FILE DIRECTLY.")
 (defun ob-cypher/node-to-dot (node)
   (let ((labels (cdr (assoc 'labels node))))
     (s-format "n${id} [label=\"{${head}<body> ${body}}\"]" 'aget
-              `(("id" . ,(cdr (assoc 'id node)))
+              `(("id" . ,(ob-cypher/scigraph/safe-id (cdr (assoc 'id node))))
                 ("head" . ,(if (> (length labels) 0) (concat "<head>" (s-join ":" labels) "|") ""))
                 ("body" . ,(s-join "\\n" (-map 'ob-cypher/property (cdr (assoc 'properties node)))))))))
 
 (defun ob-cypher/rel-to-dot (rel)
   (s-format "n${start} -> n${end} [label = ${label}]" 'aget
-            `(("start" . ,(cdr (assoc 'startNode rel)))
-              ("end" . ,(cdr (assoc 'endNode rel)))
+            `(("start" . ,(ob-cypher/scigraph/safe-id (cdr (assoc 'startNode rel))))
+              ("end" . ,(ob-cypher/scigraph/safe-id (cdr (assoc 'endNode rel))))
               ("label" . ,(cdr (assoc 'type rel))))))
 
 (defun ob-cypher/json-to-dot (output)
@@ -176,10 +176,11 @@ or similar. PLEASE DO NOT PUT YOUR API KEYS IN AN ORG FILE DIRECTLY.")
     (s-format "digraph {\nnode[shape=Mrecord]\n${nodes}\n${edges}\n} " 'aget template)))
 
 (defun ob-cypher/scigraph/safe-id (id)
-  (replace-regexp-in-string "-" "_" ; FIXME dry
+  (replace-regexp-in-string "#" "_" ; FIXME dry
+  (replace-regexp-in-string "-" "_"
   (replace-regexp-in-string "\\." "_"
   (replace-regexp-in-string "/" "_"
-  (replace-regexp-in-string ":" "_" id)))))
+  (replace-regexp-in-string ":" "_" id))))))
 
 (defun ob-cypher/scigraph/node-to-dot (node)
   (let ((sid (ob-cypher/scigraph/safe-id (gethash "id" node)))
