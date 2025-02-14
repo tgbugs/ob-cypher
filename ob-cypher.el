@@ -115,9 +115,12 @@ or similar. PLEASE DO NOT PUT YOUR API KEYS IN AN ORG FILE DIRECTLY.")
   (let* ((tmp (org-babel-temp-file "cypher-dot-"))
          (result (ob-cypher/query statement host port authstring))
          (dot (ob-cypher/json-to-dot result))
-         (cmd (if (string= (file-name-extension output) "graphml")
-                  (format "dot2graphml %s %s" tmp output)
-                (format "dot -T%s -o %s %s" (file-name-extension output) output tmp))))
+         (cmd (cond
+               ((string= (file-name-extension output) "gml")
+                (format "gv2gml %s -o %s" tmp output))
+               ((string= (file-name-extension output) "graphml")
+                (format "dot2graphml %s %s" tmp output))
+               (t (format "dot -T%s -o %s %s" (file-name-extension output) output tmp)))))
     (message result)
     (message dot)
     (message cmd)
@@ -150,16 +153,19 @@ or similar. PLEASE DO NOT PUT YOUR API KEYS IN AN ORG FILE DIRECTLY.")
   (let* ((tmp (org-babel-temp-file "cypher-dot-"))
          (result (ob-cypher/scigraph/query statement vars scigraph limit api-key))
          (dot (ob-cypher/scigraph/json-to-dot result))
-         (cmd (if (string= (file-name-extension output) "graphml")
-                  (format "dot2graphml %s %s" tmp output)
-                (format
-                 (concat
-                  "dot "
-                  "-Efontname='Dejavu Sans Mono' "
-                  "-Nfontname='Dejavu Sans Mono' "
-                  "-Grankdir=LR "
-                  "-T%s -o %s %s")
-                 (file-name-extension output) output tmp))))
+         (cmd (cond
+               ((string= (file-name-extension output) "gml")
+                (format "gv2gml %s -o %s" tmp output))
+               ((string= (file-name-extension output) "graphml")
+                (format "dot2graphml %s %s" tmp output))
+               (t (format
+                   (concat
+                    "dot "
+                    "-Efontname='Dejavu Sans Mono' "
+                    "-Nfontname='Dejavu Sans Mono' "
+                    "-Grankdir=LR "
+                    "-T%s -o %s %s")
+                   (file-name-extension output) output tmp)))))
     (with-temp-file tmp
       (insert dot))
     (org-babel-eval cmd "")
